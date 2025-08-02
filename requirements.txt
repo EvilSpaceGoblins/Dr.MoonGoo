@@ -22,7 +22,8 @@ pymongo==4.8.0
 python-dateutil==2.9.0.post0
 pytz==2024.1
 PyYAML==6.0.1
-requests==2.32.3
+requests==2.32.4
+aiohappyeyeballs>=2.5.0
 six==1.16.0
 tzdata==2024.1
 urllib3==2.5.0
