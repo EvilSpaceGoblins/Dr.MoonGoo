@@ -92,7 +92,21 @@ async def on_interaction(interaction: discord.Interaction):
 
                 
 async def is_admin(ctx):
-    admin_roles = config.get_config('admin_role', [])
+    # If in DMs, reject the command with a helpful message
+    if ctx.guild is None:
+        await ctx.send("The `!authenticate` command must be used in a server, not in DMs.")
+        return False
+    
+    # Normal server context check
+    admin_role = config.get_config('admin_role', 'Admin')
+    
+    # Handle whether admin_role is a string or list
+    if isinstance(admin_role, str):
+        admin_roles = [admin_role]
+    else:
+        admin_roles = admin_role
+        
+    # Check if the user has any of the admin roles
     return any(get(ctx.guild.roles, name=role_name) in ctx.author.roles for role_name in admin_roles)
 
 @bot.command()
@@ -212,7 +226,11 @@ async def getMeGoo(ctx):
         await ctx.send("You are not authorized to use this command.")
         return
     await ctx.send("Running System Check and updating Data... Please Wait")
-    await handle_setup(ctx)
+    try:
+        await handle_setup(ctx)
+    except Exception as e:
+        logging.error(f"Error in getMeGoo command: {e}")
+        await ctx.send(f"An error occurred: {e}")
 
 @bot.command()
 async def goohelp(ctx):

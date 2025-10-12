@@ -21,8 +21,24 @@ async def save_moon_goo_to_json(moon_drill_assets, server_id):
         filename = f"{server_id}_metenox_goo.json"
         logging.info(f"Saving moon goo data to JSON: {regular_dict}")
 
+        # Create a backup of existing file if it exists
+        if os.path.exists(filename):
+            backup_name = f"{filename}.bak"
+            try:
+                os.replace(filename, backup_name)
+                logging.info(f"Created backup of {filename} to {backup_name}")
+            except Exception as e:
+                logging.warning(f"Failed to create backup: {e}")
+
         with open(filename, 'w') as file:
             json.dump(regular_dict, file, indent=4)
+        
+        # Verify the file was written correctly
+        if os.path.exists(filename) and os.path.getsize(filename) > 0:
+            logging.info(f"Successfully saved moon goo data to {filename}")
+        else:
+            logging.error(f"File {filename} was not created or is empty")
+            
     except IOError as e:
         logging.error(f"Error saving moon goo info to JSON file: {e}")
 
@@ -30,20 +46,34 @@ async def load_moon_goo_from_json(server_id):
     filename = f"{server_id}_metenox_goo.json"
     try:
         if os.path.exists(filename):
-            with open(filename, 'r') as file:
-                data = json.load(file) or {}
-                # Convert loaded data back to a regular dict
-                moon_goo_items = dict(data)
-                logging.info(f"Loaded moon goo data from {filename}: {moon_goo_items}")
-                return moon_goo_items
+            # Check if file is not empty
+            if os.path.getsize(filename) > 0:
+                with open(filename, 'r') as file:
+                    data = json.load(file) or {}
+                    # Convert loaded data back to a regular dict
+                    moon_goo_items = dict(data)
+                    logging.info(f"Loaded moon goo data from {filename}: {moon_goo_items}")
+                    return moon_goo_items
+            else:
+                logging.warning(f"{filename} exists but is empty.")
+                return {}
         else:
             logging.warning(f"{filename} not found.")
             return {}
     except FileNotFoundError:
         logging.error(f"File not found: {filename}")
         return {}
-    except json.JSONDecodeError:
-        logging.error(f"Error decoding JSON from file: {filename}")
+    except json.JSONDecodeError as e:
+        logging.error(f"Error decoding JSON from file {filename}: {e}")
+        # Try to recover from backup
+        backup_name = f"{filename}.bak"
+        if os.path.exists(backup_name):
+            try:
+                logging.info(f"Attempting to recover from backup {backup_name}")
+                with open(backup_name, 'r') as backup_file:
+                    return json.load(backup_file) or {}
+            except Exception as backup_error:
+                logging.error(f"Failed to recover from backup: {backup_error}")
         return {}
     
 def load_moon_goo_data(server_id):

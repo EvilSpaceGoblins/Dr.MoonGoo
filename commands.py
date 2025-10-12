@@ -44,7 +44,8 @@ async def handle_setup(message):
         admin_channels = config.get_config('admin_channels', [])
         admin_channels.append(alert_channel_id)
         config.set_config('admin_channels', admin_channels)
-        config.save_config()
+        # Pass the global config object from the config module
+        config.save_config(config.config)  # Fixed line - passing the required argument
 
     await message.channel.send(f"Setup complete. Admin channel added.")
     
@@ -104,8 +105,8 @@ async def handle_setadmin(message):
         return
 
     admin_channels.append(message.channel.id)
-    config.get_config['admin_channels'] = admin_channels
-    config.save_config()
+    config.set_config('admin_channels', admin_channels)
+    config.save_config(config.config)
     await message.channel.send(f"Admin channel added: {message.channel.id}\nCurrent admin channels: {admin_channels}")
 
 async def handle_showadmin(message):

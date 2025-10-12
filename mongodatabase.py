@@ -6,11 +6,11 @@ import os
 import yaml
 import json
 from bson import ObjectId
-from administration import get_access_token, fetch_corporation_name
+from administration import get_access_token, fetch_corporation_name, extract_corporation_id_from_filename
 from structurecommands import get_all_structure_assets, get_moon_drills, get_structure_name
 from moongoo import get_moon_goo_items
 from moongoo_commands import load_moon_goo_from_json
-from config import save_server_structures, get_config
+from config import save_server_structures, load_server_structures, get_config
 import config
 import requests
 
@@ -22,15 +22,36 @@ def load_mongodb_config():
 
 # MongoDB connection setup
 def get_mongo_client():
-    mongodb_config = load_mongodb_config()
-    username = mongodb_config.get("username")
-    password = mongodb_config.get("password")
-    uri = mongodb_config.get("uri").replace("<db_password>", password)
-    client = pymongo.MongoClient(uri)
-    return client
+    try:
+        mongodb_config = load_mongodb_config()
+        username = mongodb_config.get("username")
+        password = mongodb_config.get("password")
+        
+        # Use direct string interpolation for username and password
+        uri = mongodb_config.get("uri")
+        uri = uri.replace("${MONGODB_USERNAME}", username)
+        uri = uri.replace("${MONGODB_PASSWORD}", password)
+        
+        logging.info(f"Connecting to MongoDB with URI: {uri.replace(password, '********')}")
+        
+        client = pymongo.MongoClient(uri, serverSelectionTimeoutMS=5000)
+        # Force a connection to verify it works
+        client.server_info()
+        logging.info("Successfully connected to MongoDB")
+        return client
+    except pymongo.errors.ServerSelectionTimeoutError as e:
+        logging.error(f"MongoDB connection timeout: {str(e)}")
+        raise
+    except pymongo.errors.ConnectionFailure as e:
+        logging.error(f"MongoDB connection failure: {str(e)}")
+        raise
+    except Exception as e:
+        logging.error(f"MongoDB connection error: {str(e)}")
+        raise
 
 # Function to save to MongoDB
 def save_to_mongodb(data, collection_name, server_id):
+    client = None
     try:
         client = get_mongo_client()
         db = client[load_mongodb_config()['database']]
@@ -42,41 +63,93 @@ def save_to_mongodb(data, collection_name, server_id):
             "data": data
         }
 
-        collection.insert_one(data_with_timestamp)
-        logging.info(f"Data successfully saved to MongoDB in {collection_name}_{server_id}.")
+        result = collection.insert_one(data_with_timestamp)
+        logging.info(f"Data successfully saved to MongoDB in {collection_name}_{server_id} with ID: {result.inserted_id}")
+        return True
+    except pymongo.errors.ServerSelectionTimeoutError as e:
+        logging.error(f"MongoDB connection timeout when saving to {collection_name}_{server_id}: {str(e)}")
+        return False
+    except pymongo.errors.ConnectionFailure as e:
+        logging.error(f"MongoDB connection failure when saving to {collection_name}_{server_id}: {str(e)}")
+        return False
     except Exception as e:
-        logging.error(f"Failed to save data to MongoDB: {str(e)}")
+        logging.error(f"Failed to save data to MongoDB collection {collection_name}_{server_id}: {str(e)}")
+        return False
     finally:
-        client.close()
+        if client:
+            client.close()
 
 # Async function to collect gas data
 async def collect_gas_data(server_id):
     try:
-        # Fetch the access token for the server
-        access_token = await get_access_token(server_id)
+        # Extract corporation_id from the filename
+        corporation_id = extract_corporation_id_from_filename(server_id)
+        if not corporation_id:
+            logging.error(f"Failed to extract corporation ID for server {server_id}")
+            return None
+            
+        # Fetch the access token for the server and corporation
+        access_token = get_access_token(server_id, corporation_id)
         if not access_token:
-            return 'Failed to get access token'
+            logging.error(f"Failed to get access token for server {server_id} and corporation {corporation_id}")
+            return None
 
         headers = {'Authorization': f'Bearer {access_token}'}
-        corporation_id = config.get_config("corporation_id", server_id)
         url = f'https://esi.evetech.net/latest/corporations/{corporation_id}/assets/?datasource=tranquility'
-        response = requests.get(url, headers=headers)
+        
+        # Log the request details
+        logging.info(f"Sending request to {url} for corporation {corporation_id}")
+        
+        response = requests.get(url, headers=headers, timeout=10)
+        if response.status_code != 200:
+            logging.error(f"Error fetching assets: HTTP {response.status_code}, Response: {response.text}")
+            return None
+            
         data = response.json()
+        if isinstance(data, dict) and 'error' in data:
+            logging.error(f"Error fetching gas data: {data['error']}")
+            return None
 
-        if 'error' in data:
-            return f"Error fetching gas data: {data['error']}"
-
+        # Load structure info for structure names
+        structure_info = {}
+        try:
+            server_structures = load_server_structures(server_id, corporation_id)
+            structure_info = server_structures.get('structure_info', {})
+        except Exception as e:
+            logging.error(f"Error loading structure information: {str(e)}")
+        
         # Process and extract gas-related assets
         gas_data = {}
         for asset in data:
-            if asset.get('location_flag') == 'StructureFuel' and asset.get('type_id') == 81143:  # Magmatic Gas ID
-                gas_data[asset.get('location_id')] = {
-                    "quantity": asset.get('quantity'),
-                    "structure_name": config.get_structure_name(asset.get('location_id'), server_id)  # Function to get structure name
-                }
+            location_id = asset.get('location_id')
+            type_id = asset.get('type_id')
+            
+            # Check for both Magmatic Gas (81143) and Fuel Blocks (4312, 4246, 4247, 4051)
+            if asset.get('location_flag') == 'StructureFuel':
+                # If this structure isn't in our gas data yet, add it
+                if location_id not in gas_data:
+                    gas_data[location_id] = {
+                        "magmatic_gas": 0,
+                        "fuel_blocks": 0,
+                        "structure_name": structure_info.get(str(location_id), f"Unknown Structure ({location_id})")
+                    }
+                
+                # Add quantities based on the type
+                if type_id == 81143:  # Magmatic Gas
+                    gas_data[location_id]["magmatic_gas"] += asset.get('quantity', 0)
+                elif type_id in [4312, 4246, 4247, 4051]:  # Fuel Blocks
+                    gas_data[location_id]["fuel_blocks"] += asset.get('quantity', 0)
 
+        # Save the data to MongoDB if it's not empty
+        if gas_data and config.USE_MONGODB:
+            save_to_mongodb(gas_data, "gas_data", server_id)
+            logging.info(f"Saved gas data to MongoDB for server {server_id}")
+            
         return gas_data
 
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Request error collecting gas data for server {server_id}: {str(e)}")
+        return None
     except Exception as e:
         logging.error(f"Failed to collect gas data for server {server_id}: {str(e)}")
         return None
@@ -84,19 +157,33 @@ async def collect_gas_data(server_id):
 # Async function to collect goo data
 async def collect_goo_data(server_id):
     try:
-        # Load moon goo items dynamically from JSON file
-        moon_goo_items = await load_moon_goo_from_json()
+        # Load moon goo items from predefined dictionary
+        moon_goo_items = get_moon_goo_items()
         logging.info(f"Loaded moon goo items: {moon_goo_items}")
+        
+        # Extract corporation_id from the filename
+        corporation_id = extract_corporation_id_from_filename(server_id)
+        if not corporation_id:
+            logging.error(f"Failed to extract corporation ID for server {server_id}")
+            return None
 
-        # Fetch the access token for the server
-        access_token = await get_access_token(server_id)
+        # Fetch the access token for the server and corporation
+        access_token = get_access_token(server_id, corporation_id)
         if not access_token:
-            return 'Failed to get access token'
+            logging.error(f"Failed to get access token for server {server_id} and corporation {corporation_id}")
+            return None
 
         headers = {'Authorization': f'Bearer {access_token}'}
-        corporation_id = get_config("corporation_id", server_id)
         url = f'https://esi.evetech.net/latest/corporations/{corporation_id}/assets/?datasource=tranquility'
-        response = requests.get(url, headers=headers)
+        
+        # Log the request details
+        logging.info(f"Sending request to {url} for corporation {corporation_id}")
+        
+        response = requests.get(url, headers=headers, timeout=10)
+        if response.status_code != 200:
+            logging.error(f"Error fetching assets: HTTP {response.status_code}, Response: {response.text}")
+            return None
+            
         data = response.json()
 
         if 'error' in data:
