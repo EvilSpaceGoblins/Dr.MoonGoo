@@ -125,7 +125,7 @@ eve_online_secret_key: YOUR_EVE_ONLINE_SECRET_KEY
 
 Calculation is based on ingame values
 
-- Magmatic Gas: 1 Hour = 150 Units
+- Magmatic Gas: 1 Hour = 200 Units
 - Fuel Blocks: 1 Hour = 5 Blocks
 
 
