@@ -291,7 +291,7 @@ async def handle_checkgas(ctx):
 
             return f"> {depletion_time.strftime('%Y-%m-%d %H:%M:%S')} UTC - {int(days)} Days {int(hours)} Hours remaining"
 
-        magmatic_gas_depletion_time = calculate_depletion_time(magmatic_gas_amount, 150)  # 150 units per hour (updated by CCP)
+        magmatic_gas_depletion_time = calculate_depletion_time(magmatic_gas_amount, 200)  # 200 units per hour (updated by CCP)
         fuel_blocks_depletion_time = calculate_depletion_time(fuel_blocks_amount, 5)  # 5 units per hour
 
         gas_info += f"**{structure_name}**\n"

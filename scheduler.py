@@ -81,7 +81,7 @@ async def check_gas_and_send_alerts(alert_channel, server_id):
         magmatic_gas_amount = asset_totals['Magmatic Gas']
         fuel_blocks_amount = asset_totals['Fuel Blocks']
 
-        magmatic_gas_depletion_time, magmatic_gas_days, magmatic_gas_hours = calculate_depletion_time(magmatic_gas_amount, 150)
+        magmatic_gas_depletion_time, magmatic_gas_days, magmatic_gas_hours = calculate_depletion_time(magmatic_gas_amount, 200)
         fuel_blocks_depletion_time, fuel_blocks_days, fuel_blocks_hours = calculate_depletion_time(fuel_blocks_amount, 5)
 
         # Use helper function for alerts
