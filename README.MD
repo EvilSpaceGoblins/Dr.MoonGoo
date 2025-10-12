@@ -1,3 +1,8 @@
+# Project Archived!
+Due changes to the ESI where CCP does not allow the output of the moondrill amount of items and Magmatic Gas from running structures this bot is now offline until a later date.
+
+Feel free to fork.
+
 [![Build and Push Docker Image](https://github.com/DrDeef/Dr.MoonGoo/actions/workflows/docker-image.yml/badge.svg)](https://github.com/DrDeef/Dr.MoonGoo/actions/workflows/docker-image.yml) ![Version](https://img.shields.io/badge/version-0.7.1-green) ![Docker Pulls](https://img.shields.io/docker/pulls/drdeef/drmoongoo) ![GitHub commit activity](https://img.shields.io/github/commit-activity/m/drdeef/Dr.MoonGoo?style=flat&color=yellow)
 
 # If you like Moons and Goo, i have a solution for you!
